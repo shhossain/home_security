@@ -16,6 +16,7 @@ from cam import process_video_feed
 import threading
 import shutil
 import tempfile
+import time
 
 db = Prisma()
 
@@ -136,16 +137,31 @@ async def upload_face(name: str, file: UploadFile = File(...)):
 @app.websocket("/ws/video")
 async def video_websocket(websocket: WebSocket):
     await websocket.accept()
+    last_frame_time = 0
+    frame_interval = 1 / 24  # Reduce to 24 FPS for stability
+    last_frame_content = None
+
     try:
         while True:
-            if not current_frame_path.exists():
-                await asyncio.sleep(0.1)
+            current_time = time.time()
+            if current_time - last_frame_time < frame_interval:
+                await asyncio.sleep(0)
                 continue
 
-            with open(current_frame_path, "rb") as f:
-                frame_bytes = f.read()
-                await websocket.send_bytes(frame_bytes)
+            if not current_frame_path.exists():
+                await asyncio.sleep(0)
+                continue
 
-            # await asyncio.sleep(0.1)  # 10 FPS
+            try:
+                with open(current_frame_path, "rb") as f:
+                    frame_bytes = f.read()
+                    # Only send frame if it's different from the last one
+                    if frame_bytes != last_frame_content:
+                        await websocket.send_bytes(frame_bytes)
+                        last_frame_content = frame_bytes
+                        last_frame_time = current_time
+            except (FileNotFoundError, PermissionError):
+                continue
+
     except WebSocketDisconnect:
         print("Client disconnected")
