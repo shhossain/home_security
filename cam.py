@@ -6,7 +6,7 @@ from core.controller import VIDEO_URL, ScreenResolution, set_flash, set_framesiz
 from core.face import initialize_face_recognition, start_recognizing
 from core.face_detection import FaceDetection
 from core.face_liveness import LivenessDetection
-from core.webcam import get_remote_webcam, get_webcam_feed
+from core.webcam import get_webcam_feed, get_remote_webcam_feed
 from models.face import Face
 from utils.helpers import calculate_darkness_percentage, calculate_flash_intensity
 from utils.visualize_helpers import draw_faces
@@ -40,7 +40,7 @@ def process_video_feed(show_video: bool = False):
     while True:
         try:
             # frame = get_video_feed(VIDEO_URL)
-            frame = get_remote_webcam("http://192.168.0.60:9999")
+            frame = get_remote_webcam_feed("http://192.168.0.60:9999")
             if frame is None:  # Check if frame is None
                 frame = no_cam_frame
                 is_frame_available = False
