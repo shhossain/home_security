@@ -14,7 +14,7 @@ from utils.constants import deepPix_checkpoint_path, img_folder, current_frame_p
 
 
 def process_video_feed(show_video: bool = False):
-    frame_skip = 1
+    frame_skip = 2  # Process every 2nd frame instead of 3
 
     faceDetector = FaceDetection(max_num_faces=1)
     livenessDetector = LivenessDetection(
@@ -122,8 +122,12 @@ def process_video_feed(show_video: bool = False):
                 frame = draw_faces(
                     frame, [f.scale_copy(2) for f in detected_faces.values()]
                 )
+                # Resize frame to a reasonable size before saving
+                frame = cv2.resize(frame, (1280, 720))
+                cv2.imwrite(
+                    str(current_frame_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 85]
+                )
 
-            cv2.imwrite(str(current_frame_path), frame)
             if show_video:
                 cv2.imshow("Video", frame)
 
@@ -131,16 +135,15 @@ def process_video_feed(show_video: bool = False):
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
                     break
-            else:
-                # time.sleep(0.1)  # 10 FPS
-                pass
+            # Remove the sleep delay that was here
 
         except KeyboardInterrupt:
             break
 
         except Exception as e:
             print(f"Error in main loop: {e}")
-            time.sleep(0.1)
+            # Reduce error wait time
+            time.sleep(0.05)
 
     set_flash(0)
     cv2.destroyAllWindows()

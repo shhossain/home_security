@@ -10,6 +10,7 @@ export function VideoFeed() {
   const wsRef = useRef<WebSocket | null>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const currentBlobUrl = useRef<string | null>(null);
 
   const connect = () => {
     setIsConnecting(true);
@@ -25,12 +26,21 @@ export function VideoFeed() {
 
     ws.onmessage = (event) => {
       if (imageRef.current) {
+        // Clean up previous blob URL
+        if (currentBlobUrl.current) {
+          URL.revokeObjectURL(currentBlobUrl.current);
+        }
+
         const blob = new Blob([event.data], { type: "image/jpeg" });
         const url = URL.createObjectURL(blob);
-        imageRef.current.src = url;
+        currentBlobUrl.current = url;
 
-        // Cleanup old blob URL after image loads
-        imageRef.current.onload = () => URL.revokeObjectURL(url);
+        // Use requestAnimationFrame for smoother updates
+        requestAnimationFrame(() => {
+          if (imageRef.current) {
+            imageRef.current.src = url;
+          }
+        });
       }
     };
 
@@ -56,6 +66,9 @@ export function VideoFeed() {
     return () => {
       wsRef.current?.close();
       clearTimeout(reconnectTimeoutRef.current);
+      if (currentBlobUrl.current) {
+        URL.revokeObjectURL(currentBlobUrl.current);
+      }
     };
   }, []);
 
@@ -81,7 +94,16 @@ export function VideoFeed() {
         </div>
       )}
 
-      <img ref={imageRef} className="w-full aspect-video object-contain bg-slate-950" alt="Video Feed" />
+      <img
+        ref={imageRef}
+        className="w-full max-h-[600px] object-contain bg-slate-950"
+        alt="Video Feed"
+        style={{
+          imageRendering: "auto",
+          maxWidth: "1280px",
+          margin: "0 auto",
+        }}
+      />
     </div>
   );
 }
