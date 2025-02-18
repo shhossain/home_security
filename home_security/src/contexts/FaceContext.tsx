@@ -60,16 +60,16 @@ export function FaceProvider({ children }: { children: React.ReactNode }) {
 
   const uploadFace = async (name: string, file: File) => {
     const formData = new FormData();
-    formData.append('file', file);
-    formData.append('name', name);
+    formData.append("file", file);
+    formData.append("name", name);
 
-    await fetch(`${API_URL}/faces/upload`, {
-      method: 'POST',
+    await apiClient(`/faces/upload`, {
+      method: "POST",
       body: formData,
     });
 
     // Refresh faces after upload
-    fetchFaces();
+    refreshFaces();
   };
 
   useEffect(() => {
