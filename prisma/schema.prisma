@@ -1,0 +1,34 @@
+generator client {
+    provider             = "prisma-client-py"
+    interface            = "sync"
+    recursive_type_depth = 5
+}
+
+datasource db {
+    provider = "sqlite"
+    url      = "file:./dev.db"
+}
+
+model Face {
+    id   String @id
+    name String @unique
+
+    face_embeddings_path String
+    face_image_path      String
+    bbox                 String
+
+    liveness   Float    @default(0)
+    active     Boolean  @default(true)
+    createdAt  DateTime @default(now())
+    last_seen  DateTime @default(now())
+    is_unknown Boolean  @default(false)
+    logs       Log[]
+}
+
+model Log {
+    id        String   @id @default(uuid())
+    faceId    String
+    face      Face     @relation(fields: [faceId], references: [id], onDelete: Cascade)
+    liveness  Float
+    timestamp DateTime @default(now())
+}
