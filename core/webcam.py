@@ -4,8 +4,10 @@ import socket
 import struct
 import numpy as np
 from urllib.parse import urlparse
+import threading
+import time
+import pickle
 
-from torch import le
 
 caps: dict[int, cv2.VideoCapture] = {}
 sc: dict[str, socket.socket] = {}
@@ -29,91 +31,96 @@ def get_webcam_feed(index=0):
     return frame
 
 
-# def receive_webcam_stream(host: str, port: int = 9999):
-#     """
-#     Receives and displays a video stream from a remote webcam server.
+sc: dict[str, socket.socket] = {}
+current_frame: dict[str, np.ndarray] = {}
 
-#     Args:
-#         host (str): The IP address of the server
-#         port (int): The port number to connect to (default: 9999)
-#     """
-#     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-#     client_socket.connect((host, port))
-
-#     data = b""
-#     payload_size = struct.calcsize(">L")
-
-#     try:
-#         while True:
-#             while len(data) < payload_size:
-#                 packet = client_socket.recv(4096)
-#                 if not packet:
-#                     return
-#                 data += packet
-
-#             packed_size = data[:payload_size]
-#             data = data[payload_size:]
-#             frame_size = struct.unpack(">L", packed_size)[0]
-
-#             while len(data) < frame_size:
-#                 data += client_socket.recv(4096)
-
-#             frame_data = data[:frame_size]
-#             data = data[frame_size:]
-
-#             frame = cv2.imdecode(
-#                 np.frombuffer(frame_data, dtype=np.uint8), cv2.IMREAD_COLOR
-#             )
-#             if frame is None:
-#                 continue
-
-#             cv2.imshow("Received Stream", frame)
-#             if cv2.waitKey(1) == 27:  # Press ESC to exit
-#                 break
-#     except Exception as e:
-#         print("Client stopped:", e)
-#     finally:
-#         client_socket.close()
-#         cv2.destroyAllWindows()
+lock = threading.Lock()
 
 
-def receive_webcan_stream(url: str):
+def _remote_webcam(url: str):
     p = urlparse(url)
-    host = p.hostname
+    host_ip = p.hostname
     port = p.port
 
-    if url not in sc:
-        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client_socket.connect((host, port))
-        sc[url] = client_socket
-        atexit.register(lambda: client_socket.close())
-    else:
-        client_socket = sc[url]
+    while True:
+        try:
+            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client_socket.connect((host_ip, port))
+            print(f"Connected to {host_ip}:{port}")
 
-    data = b""
-    payload_size = struct.calcsize(">L")
+            data = b""
+            payload_size = struct.calcsize("Q")
 
+            while True:
+                while len(data) < payload_size:
+                    packet = client_socket.recv(4 * 1024)
+                    if not packet:
+                        break
+                    data += packet
+                packed_msg_size = data[:payload_size]
+                data = data[payload_size:]
+                msg_size = struct.unpack("Q", packed_msg_size)[0]
+
+                while len(data) < msg_size:
+                    data += client_socket.recv(4 * 1024)
+                frame_data = data[:msg_size]
+                data = data[msg_size:]
+                frame = pickle.loads(frame_data)
+
+                lock.acquire()
+                current_frame[url] = frame
+                lock.release()
+
+        except ConnectionRefusedError:
+            print("Connection refused. Retrying in 1 seconds...")
+            time.sleep(1)
+        except Exception as e:
+            print(f"Error: {e}. Retrying in 1 seconds...")
+            time.sleep(1)
+        finally:
+            client_socket.close()
+
+
+def ping(url: str):
+    p = urlparse(url)
+    host_ip = p.hostname
+    port = p.port
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        while len(data) < payload_size:
-            packet = client_socket.recv(4096)
-            if not packet:
-                return
-            data += packet
-
-        packed_size = data[:payload_size]
-        data = data[payload_size:]
-        frame_size = struct.unpack(">L", packed_size)[0]
-
-        while len(data) < frame_size:
-            data += client_socket.recv(4096)
-
-        frame_data = data[:frame_size]
-        data = data[frame_size:]
-
-        frame = cv2.imdecode(
-            np.frombuffer(frame_data, dtype=np.uint8), cv2.IMREAD_COLOR
-        )
-
-        return frame
+        client_socket.connect((host_ip, port))
+        client_socket.close()
+        return True
     except Exception as e:
-        return None
+        client_socket.close()
+        return False
+
+
+def remote_webcam(url: str):
+    with lock:
+        if url in current_frame:
+            return current_frame[url]
+        else:
+            if not ping(url):
+                raise Exception("Cannot connect to remote webcam")
+
+            threading.Thread(target=_remote_webcam, args=(url,)).start()
+            return None
+
+
+if __name__ == "__main__":
+    server_url = "http://localhost:9999"  # Change this to your server's IP
+    print(f"Attempting to connect to {server_url}")
+
+    while True:
+        try:
+            frame = remote_webcam(server_url)
+            if frame is not None:
+                cv2.imshow("RECEIVING VIDEO", frame)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("q"):
+                    break
+        except Exception as e:
+            print(f"Main loop error: {e}")
+            time.sleep(1)
+
+    cv2.destroyAllWindows()
