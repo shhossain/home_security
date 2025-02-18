@@ -42,43 +42,58 @@ def _remote_webcam(url: str):
     host_ip = p.hostname
     port = p.port
 
+    client_socket = None
     while True:
         try:
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # Add connection timeout
+            client_socket.settimeout(5)
             client_socket.connect((host_ip, port))
+            # Reset timeout for receiving data
+            client_socket.settimeout(None)
             print(f"Connected to {host_ip}:{port}")
 
             data = b""
             payload_size = struct.calcsize("Q")
 
             while True:
-                while len(data) < payload_size:
-                    packet = client_socket.recv(4 * 1024)
-                    if not packet:
-                        break
-                    data += packet
-                packed_msg_size = data[:payload_size]
-                data = data[payload_size:]
-                msg_size = struct.unpack("Q", packed_msg_size)[0]
+                try:
+                    while len(data) < payload_size:
+                        packet = client_socket.recv(4 * 1024)
+                        if not packet:
+                            raise ConnectionError("Server disconnected")
+                        data += packet
+                    packed_msg_size = data[:payload_size]
+                    data = data[payload_size:]
+                    msg_size = struct.unpack("Q", packed_msg_size)[0]
 
-                while len(data) < msg_size:
-                    data += client_socket.recv(4 * 1024)
-                frame_data = data[:msg_size]
-                data = data[msg_size:]
-                frame = pickle.loads(frame_data)
+                    while len(data) < msg_size:
+                        data += client_socket.recv(4 * 1024)
+                    frame_data = data[:msg_size]
+                    data = data[msg_size:]
+                    frame = pickle.loads(frame_data)
 
-                lock.acquire()
-                current_frame[url] = frame
-                lock.release()
+                    lock.acquire()
+                    current_frame[url] = frame
+                    lock.release()
 
+                except socket.timeout:
+                    print("Connection timed out")
+                    break
+                except Exception as e:
+                    print(f"Error receiving data: {e}")
+                    break
+
+        except socket.timeout:
+            print("Connection attempt timed out. Retrying in 1 second...")
         except ConnectionRefusedError:
-            print("Connection refused. Retrying in 1 seconds...")
-            time.sleep(1)
+            print("Connection refused. Retrying in 1 second...")
         except Exception as e:
-            print(f"Error: {e}. Retrying in 1 seconds...")
-            time.sleep(1)
+            print(f"Connection error: {e}. Retrying in 1 second...")
         finally:
-            client_socket.close()
+            if client_socket is not None:
+                client_socket.close()
+                time.sleep(1)
 
 
 def ping(url: str):
