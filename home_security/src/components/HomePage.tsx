@@ -4,12 +4,17 @@ import { useFaces } from "@/contexts/FaceContext";
 import { Card, CardDescription, CardHeader } from "./ui/card";
 import FaceCard from "./FaceCard";
 import { VideoFeed } from "./VideoFeed";
+import { AddFaceDialog } from "./AddFaceDialog";
 
 export function HomePage() {
-  const { knownFaces, unknownFaces, stats, renameFace, deleteFace } = useFaces();
+  const { knownFaces, unknownFaces, stats, renameFace, deleteFace, uploadFace } = useFaces();
 
   return (
     <div className="container mx-auto py-8 space-y-8">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Face Recognition</h1>
+        <AddFaceDialog onAddFace={uploadFace} />
+      </div>
       <VideoFeed />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

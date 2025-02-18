@@ -15,6 +15,7 @@ interface FaceContextType {
   renameFace: (id: string, name: string) => Promise<void>;
   deleteFace: (id: string) => Promise<void>;
   refreshFaces: () => Promise<void>;
+  uploadFace: (name: string, file: File) => Promise<void>;
 }
 
 const FaceContext = createContext<FaceContextType | undefined>(undefined);
@@ -57,6 +58,20 @@ export function FaceProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const uploadFace = async (name: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('name', name);
+
+    await fetch(`${API_URL}/faces/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    // Refresh faces after upload
+    fetchFaces();
+  };
+
   useEffect(() => {
     refreshFaces();
     const interval = setInterval(refreshFaces, 30000);
@@ -72,6 +87,7 @@ export function FaceProvider({ children }: { children: React.ReactNode }) {
         renameFace,
         deleteFace,
         refreshFaces,
+        uploadFace,
       }}
     >
       {children}

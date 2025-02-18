@@ -1,7 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.responses import FileResponse
 from prisma import Prisma
 from prisma.types import FaceWhereInput
@@ -13,6 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import datetime as dt
 from cam import process_video_feed
 import threading
+import shutil
+import tempfile
 
 db = Prisma()
 
@@ -112,6 +114,22 @@ def get_face_image(face_id: str):
         return {"error": "Face image not found"}
 
     return FileResponse(face.face_image_path)
+
+
+@app.post("/api/faces/upload")
+async def upload_face(name: str, file: UploadFile = File(...)):
+    # Save uploaded file to temp location
+    temp_path = tempfile.mktemp(suffix=".jpg")
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # Save face using existing function
+    face = save_face(temp_path, name)
+
+    # Cleanup temp file
+    Path(temp_path).unlink(missing_ok=True)
+
+    return face
 
 
 @app.websocket("/ws/video")
