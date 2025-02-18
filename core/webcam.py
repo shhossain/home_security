@@ -110,7 +110,7 @@ def ping(url: str):
         return False
 
 
-def remote_webcam(url: str):
+def get_remote_webcam_feed(url: str):
     with lock:
         if url in current_frame:
             return current_frame[url]
@@ -128,7 +128,7 @@ if __name__ == "__main__":
 
     while True:
         try:
-            frame = remote_webcam(server_url)
+            frame = get_remote_webcam_feed(server_url)
             if frame is not None:
                 cv2.imshow("RECEIVING VIDEO", frame)
                 key = cv2.waitKey(1) & 0xFF
