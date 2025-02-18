@@ -12,3 +12,4 @@ pydantic
 prisma
 fastapi
 uvicorn
+python-multipart
