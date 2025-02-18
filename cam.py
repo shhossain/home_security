@@ -1,11 +1,12 @@
 import cv2
 import time
 
-from core.camera import get_video_feed
+from core.esp32_camera import get_video_feed
 from core.controller import VIDEO_URL, ScreenResolution, set_flash, set_framesize
-from core.face import start_recognizing
+from core.face import initialize_face_recognition, start_recognizing
 from core.face_detection import FaceDetection
 from core.face_liveness import LivenessDetection
+from core.webcam import get_webcam_feed
 from models.face import Face
 from utils.helpers import calculate_darkness_percentage, calculate_flash_intensity
 from utils.visualize_helpers import draw_faces
@@ -24,7 +25,7 @@ def process_video_feed(show_video: bool = False):
         cv2.namedWindow("Video", cv2.WINDOW_NORMAL)
         cv2.resizeWindow("Video", 800, 600)
 
-    set_framesize(ScreenResolution.SXGA_1280_1024)
+    # set_framesize(ScreenResolution.SXGA_1280_1024)
 
     no_cam_img_path = "imgs/no-cam.png"
     no_cam_frame = cv2.imread(no_cam_img_path)
@@ -38,7 +39,8 @@ def process_video_feed(show_video: bool = False):
     print("Starting video feed...")
     while True:
         try:
-            frame = get_video_feed(VIDEO_URL)
+            # frame = get_video_feed(VIDEO_URL)
+            frame = get_webcam_feed()
             if frame is None:  # Check if frame is None
                 frame = no_cam_frame
                 is_frame_available = False
@@ -74,6 +76,7 @@ def process_video_feed(show_video: bool = False):
                 matched_ids = []
                 for f, box in zip(faces, boxes):
                     liveness_val = livenessDetector(face_arr=f)
+                    print(f"Face liveness: {liveness_val}")
                     face = Face(bbox=box, liveness=liveness_val)
                     face_path = str(img_folder / f"{face.id}.jpg")
                     f = cv2.cvtColor(f, cv2.COLOR_RGB2BGR)
@@ -89,6 +92,7 @@ def process_video_feed(show_video: bool = False):
                             for b in detected_faces.values():
                                 if b.id == most_similar.id:
                                     face_matched = True
+
                                     matched_ids.append(b.id)
                                     b.live_update(face)
                                     break
@@ -143,4 +147,5 @@ def process_video_feed(show_video: bool = False):
 
 
 if __name__ == "__main__":
+    initialize_face_recognition()
     process_video_feed(show_video=True)

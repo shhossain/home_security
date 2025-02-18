@@ -10,24 +10,6 @@ from models.helpers import Box
 from utils.constants import em_path
 
 
-def load_images(images_path: list[str]):
-    embeddings = []
-    for img in images_path:
-        path = em_path / str(Path(img).stem + ".pkl")
-        if path.exists():
-            with open(path, "rb") as f:
-                embeddings.append(pickle.load(f))
-        else:
-            print(f"Embedding not found for {img}. Generating...")
-            image = face_recognition.load_image_file(img)
-            embedding = face_recognition.face_encodings(image)[0]
-            embeddings.append(embedding)
-            with open(path, "wb") as f:
-                pickle.dump(embedding, f)
-
-    return embeddings
-
-
 known_face_encodings = []
 known_face_names = []
 
@@ -160,7 +142,7 @@ def start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float = 0.7):
 
 
 def initialize_face_recognition():
-    save_face(r"C:\Users\hossa\Pictures\WhatsApp\photo_crop.jpg", "Sifat")
+    save_face(r"C:\Users\sifat\Downloads\sifat.jpg", "Sifat")
     threading.Thread(target=recognize_faces, daemon=True).start()
     threading.Thread(target=load_faces, daemon=True).start()
 
