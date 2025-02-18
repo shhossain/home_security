@@ -2,10 +2,10 @@ import cv2
 import atexit
 
 
-caps: dict[int, cv2.VideoCapture] = {}
+caps: dict[int | str, cv2.VideoCapture] = {}
 
 
-def get_webcam_feed(index=0):
+def get_webcam_feed(index: str | int = 0):
     if index not in caps:
         caps[index] = cv2.VideoCapture(index)
         atexit.register(lambda: caps[index].release())

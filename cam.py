@@ -40,7 +40,7 @@ def process_video_feed(show_video: bool = False):
     while True:
         try:
             # frame = get_video_feed(VIDEO_URL)
-            frame = get_webcam_feed()
+            frame = get_webcam_feed("http://192.168.0.60:8080")
             if frame is None:  # Check if frame is None
                 frame = no_cam_frame
                 is_frame_available = False
