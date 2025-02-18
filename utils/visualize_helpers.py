@@ -51,29 +51,25 @@ def draw_faces(frame, faces: list[Face]):
             2,
         )
 
-        # Loading animation with rainbow colors
+        # Loading animation with single color
         if not face.is_loaded:
-            center = (left + 30, top + 30)
-            radius = 15
+            center = (left + 20, top + 20)  # Smaller position
+            radius = 8  # Smaller radius
             last_angle = face.state.get("last_angle", 0)
 
-            # Draw base circle with purple color
-            cv2.circle(frame, center, radius, (255, 0, 255), 2)
+            # Draw base circle
+            LOADING_COLOR = (0, 255, 255)  # Cyan color
+            cv2.circle(frame, center, radius, LOADING_COLOR, 2)
 
-            # Draw rotating dots with rainbow colors
-            for i in range(8):
-                angle = last_angle + (i * 45)
+            # Draw rotating dots
+            for i in range(6):  # Fewer dots
+                angle = last_angle + (i * 60)  # Adjusted angle for 6 dots
                 dot_x = int(center[0] + radius * np.cos(np.radians(angle)))
                 dot_y = int(center[1] + radius * np.sin(np.radians(angle)))
 
-                # Create rainbow effect
-                hue = (i * 180 // 8 + last_angle) % 180
-                hsv_color = np.array([[[hue, 255, 255]]], dtype=np.uint8)
-                rgb_color = cv2.cvtColor(hsv_color, cv2.COLOR_HSV2BGR)[0][0]
+                # Draw dot with single color
+                cv2.circle(frame, (dot_x, dot_y), 2, LOADING_COLOR, -1)
 
-                # Draw colored dot
-                cv2.circle(frame, (dot_x, dot_y), 3, rgb_color.tolist(), -1)
-
-            face.state["last_angle"] = (last_angle + 5) % 360
+            face.state["last_angle"] = (last_angle + 8) % 360  # Faster rotation
 
     return frame
