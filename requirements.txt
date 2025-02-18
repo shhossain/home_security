@@ -1,0 +1,13 @@
+https://github.com/z-mahmud22/Dlib_Windows_Python3.x/raw/refs/heads/main/dlib-19.24.99-cp312-cp312-win_amd64.whl 
+face_recognition
+torch
+torchvision
+tqdm
+numpy
+opencv-python
+onnxruntime
+mediapipe
+requests
+pydantic
+prisma
+fastapi
