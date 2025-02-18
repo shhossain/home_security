@@ -9,11 +9,11 @@ import time
 import pickle
 
 
-caps: dict[int, cv2.VideoCapture] = {}
+caps: dict[int | str, cv2.VideoCapture] = {}
 sc: dict[str, socket.socket] = {}
 
 
-def get_webcam_feed(index=0):
+def get_webcam_feed(index: str | int = 0):
     if index not in caps:
         caps[index] = cv2.VideoCapture(index)
         atexit.register(lambda: caps[index].release())
