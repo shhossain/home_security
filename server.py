@@ -1,12 +1,13 @@
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.responses import FileResponse
 from prisma import Prisma
 from prisma.types import FaceWhereInput
 from pydantic import BaseModel
-from core.face import initialize_face_recognition
+from core.face import initialize_face_recognition, save_face
 from utils.constants import current_frame_path
 from models.face import db
 from fastapi.middleware.cors import CORSMiddleware

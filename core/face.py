@@ -7,7 +7,8 @@ from queue import Queue
 import numpy as np
 from models.face import Face, db
 from models.helpers import Box
-from utils.constants import em_path
+from utils.constants import em_path, img_folder
+import shutil
 
 
 known_face_encodings = []
@@ -24,7 +25,11 @@ def save_face(img_path: str, name: str):
         return
 
     print(f"Saving face {name}")
-    image = face_recognition.load_image_file(img_path)
+    # copy image file
+    image_path = img_folder / str(name + ".jpg")
+    shutil.copyfile(img_path, image_path)
+
+    image = face_recognition.load_image_file(image_path)
     embedding = face_recognition.face_encodings(image)[0]
     epath = str(em_path / str(name + ".pkl"))
     with open(epath, "wb") as f:
@@ -34,7 +39,7 @@ def save_face(img_path: str, name: str):
     face = Face(
         name=name,
         bbox=box,
-        face_image_path=img_path,
+        face_image_path=image_path,
         face_embeddings_path=epath,
         is_unknown=False,
     )
