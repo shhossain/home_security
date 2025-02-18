@@ -11,5 +11,5 @@ requests
 pydantic
 prisma
 fastapi
-uvicorn
+uvicorn[standard]
 python-multipart
