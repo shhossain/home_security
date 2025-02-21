@@ -1,5 +1,8 @@
+import base64
 import cv2
 import numpy as np
+
+from models.face import Face
 
 
 def calculate_darkness_percentage(frame: np.ndarray, threshold: int = 50) -> float:
@@ -46,9 +49,57 @@ def calculate_flash_intensity(
 
     if darkness_percentage > threshold:
         val = int(
-            (darkness_percentage - threshold)
-            * (max_flash_intensity / (100 - threshold))
+            (darkness_percentage - 50) * (max_flash_intensity / (100 - threshold))
         )
         return min(val, max_flash_intensity)
 
     return 0
+
+
+def image_to_base64(image: np.ndarray) -> str:
+    """
+    Convert an image to base64 string.
+
+    Args:
+        image (np.ndarray): The image to convert.
+
+    Returns:
+        str: The base64 string of the image.
+    """
+
+    _, buffer = cv2.imencode(".jpg", image)
+    return base64.b64encode(buffer).decode()
+
+
+def base64_to_image(base64_string: str) -> np.ndarray:
+    """
+    Convert a base64 string to an image.
+
+    Args:
+        base64_string (str): The base64 string to convert.
+
+    Returns:
+        np.ndarray: The image from the base64 string.
+    """
+
+    if base64_string.startswith("data:"):
+        base64_string = base64_string.split(",")[1]
+
+    buffer = base64.b64decode(base64_string)
+    arr = np.frombuffer(buffer, np.uint8)
+    return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+
+def should_open_door(face: Face, liveness_threshold: float = 0.8) -> bool:
+    """
+    Check if the door should be opened based on the face liveness.
+
+    Args:
+        face (Face): The face to check the liveness.
+        liveness_threshold (float): The threshold to consider the face as real. Default is 0.8.
+        near_threshold (float): The threshold to consider the face in front of the camera. Default is 80.
+    """
+    if face.check_unknown():
+        return False
+
+    return face.liveness >= liveness_threshold

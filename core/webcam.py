@@ -10,7 +10,8 @@ import pickle
 
 
 caps: dict[int | str, cv2.VideoCapture] = {}
-sc: dict[str, socket.socket] = {}
+current_frame: dict[str, np.ndarray] = {}
+lock = threading.Lock()
 
 
 def get_webcam_feed(index: str | int = 0):
@@ -29,12 +30,6 @@ def get_webcam_feed(index: str | int = 0):
         return None
 
     return frame
-
-
-sc: dict[str, socket.socket] = {}
-current_frame: dict[str, np.ndarray] = {}
-
-lock = threading.Lock()
 
 
 def _remote_webcam(url: str):
@@ -120,22 +115,3 @@ def get_remote_webcam_feed(url: str):
 
             threading.Thread(target=_remote_webcam, args=(url,)).start()
             return None
-
-
-if __name__ == "__main__":
-    server_url = "http://localhost:9999"  # Change this to your server's IP
-    print(f"Attempting to connect to {server_url}")
-
-    while True:
-        try:
-            frame = get_remote_webcam_feed(server_url)
-            if frame is not None:
-                cv2.imshow("RECEIVING VIDEO", frame)
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord("q"):
-                    break
-        except Exception as e:
-            print(f"Main loop error: {e}")
-            time.sleep(1)
-
-    cv2.destroyAllWindows()

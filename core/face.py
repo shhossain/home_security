@@ -1,14 +1,19 @@
-from pathlib import Path
+from multiprocessing import Value
 import pickle
 import time
 import face_recognition
 import threading
 from queue import Queue
 import numpy as np
+from core.controller import open_and_close_door
 from models.face import Face, db
 from models.helpers import Box
 from utils.constants import em_path, img_folder
-import shutil
+import cv2
+from typing import Optional
+
+from utils.face_detection_helpers import extract_face
+from utils.helpers import should_open_door
 
 
 known_face_encodings = []
@@ -18,33 +23,45 @@ unknown_face_encodings = []
 unknown_face_names = []
 
 
-def save_face(img_path: str, name: str):
+def save_face(img_path: str, name: str, bbox: Optional[Box] = None):
     f = db.face.find_unique(where={"name": name})
     if f:
-        print(f"Face with name {name} already exists")
-        return
+        raise ValueError(f"Face with name {name} already exists")
 
     print(f"Saving face {name}")
-    # copy image file
-    image_path = img_folder / str(name + ".jpg")
-    shutil.copyfile(img_path, image_path)
+    # image = face_recognition.load_image_file(img_path)
+    image = cv2.imread(img_path)
+    if bbox:
+        face_img = extract_face(image, bbox, margin=1)
+        if face_img is None:
+            raise ValueError("Invalid face bounding box")
+        face_img = cv2.cvtColor(face_img, cv2.COLOR_RGB2BGR)
+        embedding = face_recognition.face_encodings(face_img)[0]
+        image = face_img
+    else:
+        embedding = face_recognition.face_encodings(image)[0]
+        bbox = Box(left=0, top=0, right=image.shape[1], bottom=image.shape[0])
 
-    image = face_recognition.load_image_file(image_path)
-    embedding = face_recognition.face_encodings(image)[0]
-    epath = str(em_path / str(name + ".pkl"))
+    # Save face image
+    image_path = img_folder / f"{name}.jpg"
+    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    cv2.imwrite(str(image_path), image)
+
+    # Save embedding
+    epath = em_path / f"{name}.pkl"
     with open(epath, "wb") as f:
         pickle.dump(embedding, f)
 
-    box = Box(left=0, top=0, right=0, bottom=0)
     face = Face(
         name=name,
-        bbox=box,
-        face_image_path=image_path,
-        face_embeddings_path=epath,
+        bbox=bbox,
+        face_image_path=str(image_path),
+        face_embeddings_path=str(epath),
         is_unknown=False,
     )
     face.active = False
     face.create()
+
     known_face_encodings.append(embedding)
     known_face_names.append(name)
 
@@ -85,9 +102,10 @@ def load_faces():
 
 lock = threading.Lock()
 q = Queue()
+last_open_door = Value("d", 0)
 
 
-def _start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float = 0.7):
+def _start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float = 0.85):
     box = face.bbox
     face_encodings = face_recognition.face_encodings(
         frame, [(box.top, box.right, box.bottom, box.left)]
@@ -104,16 +122,21 @@ def _start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float = 0.7)
             if f:
                 face.update_from_db(f)
 
+                if should_open_door(face) and time.time() - last_open_door.value > 5:
+                    last_open_door.value = time.time()
+                    open_and_close_door()
+
         else:
             matches = face_recognition.compare_faces(
                 unknown_face_encodings,
                 face_encodings[0],
-                tolerance=tolerance + 0.1,
+                tolerance=tolerance,
             )
             if True in matches:
                 name = unknown_face_names[matches.index(True)]
                 f = db.face.find_unique(where={"name": name})
                 if f:
+                    face.is_unknown = False
                     face.update_from_db(f)
 
             else:
@@ -135,6 +158,7 @@ def _start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float = 0.7)
 
 
 def recognize_faces():
+    print("Starting face recognition")
     while True:
         kw = q.get()
         _start_recognizing(**kw)
@@ -146,10 +170,10 @@ def start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float = 0.7):
     q.put({"frame": frame, "face": face, "tolerance": tolerance})
 
 
-def initialize_face_recognition():
-    save_face(r"C:\Users\sifat\Downloads\sifat.jpg", "Sifat")
-    threading.Thread(target=recognize_faces, daemon=True).start()
-    threading.Thread(target=load_faces, daemon=True).start()
+# def initialize_face_recognition():
+#     save_face(r"C:\Users\sifat\Downloads\sifat.jpg", "Sifat")
+#     threading.Thread(target=recognize_faces, daemon=True).start()
+#     threading.Thread(target=load_faces, daemon=True).start()
 
 
 # initialize_face_recognition()

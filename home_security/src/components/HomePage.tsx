@@ -5,12 +5,13 @@ import { Card, CardDescription, CardHeader } from "./ui/card";
 import FaceCard from "./FaceCard";
 import { VideoFeed } from "./VideoFeed";
 import { AddFaceDialog } from "./AddFaceDialog";
+import { MultiFaceUploadDialog } from "./MultiFaceUploadDialog";
 import { useState } from "react";
 import { Button } from "./ui/button";
 import { Eye, EyeOff } from "lucide-react";
 
 export function HomePage() {
-  const { knownFaces, unknownFaces, stats, renameFace, deleteFace, uploadFace } = useFaces();
+  const { knownFaces, unknownFaces, stats, renameFace, deleteFace, uploadFace, refreshFaces } = useFaces();
   const [showVideo, setShowVideo] = useState(false);
 
   return (
@@ -21,11 +22,7 @@ export function HomePage() {
           <p className="text-muted-foreground">Monitor and manage detected faces</p>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setShowVideo(!showVideo)}
-            className="flex items-center gap-2"
-          >
+          <Button variant="outline" onClick={() => setShowVideo(!showVideo)} className="flex items-center gap-2">
             {showVideo ? (
               <>
                 <EyeOff className="h-4 w-4" /> Hide Camera
@@ -36,7 +33,8 @@ export function HomePage() {
               </>
             )}
           </Button>
-          <AddFaceDialog onAddFace={uploadFace} />
+          {/* <AddFaceDialog onAddFace={uploadFace} /> */}
+          <MultiFaceUploadDialog onComplete={refreshFaces} />
         </div>
       </div>
 
@@ -65,38 +63,26 @@ export function HomePage() {
         <section>
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-bold">Known Faces</h2>
-            <span className="text-sm text-muted-foreground">
-              Total: {knownFaces.length}
-            </span>
+            <span className="text-sm text-muted-foreground">Total: {knownFaces.length}</span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {knownFaces.map((face) => (
               <FaceCard key={face.id} face={face} onRename={renameFace} onDelete={deleteFace} />
             ))}
-            {knownFaces.length === 0 && (
-              <p className="text-muted-foreground col-span-full text-center py-8">
-                No known faces found
-              </p>
-            )}
+            {knownFaces.length === 0 && <p className="text-muted-foreground col-span-full text-center py-8">No known faces found</p>}
           </div>
         </section>
 
         <section>
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-bold">Unknown Faces</h2>
-            <span className="text-sm text-muted-foreground">
-              Total: {unknownFaces.length}
-            </span>
+            <span className="text-sm text-muted-foreground">Total: {unknownFaces.length}</span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {unknownFaces.map((face) => (
               <FaceCard key={face.id} face={face} onRename={renameFace} onDelete={deleteFace} />
             ))}
-            {unknownFaces.length === 0 && (
-              <p className="text-muted-foreground col-span-full text-center py-8">
-                No unknown faces detected
-              </p>
-            )}
+            {unknownFaces.length === 0 && <p className="text-muted-foreground col-span-full text-center py-8">No unknown faces detected</p>}
           </div>
         </section>
       </div>

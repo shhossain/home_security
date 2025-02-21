@@ -1,67 +1,123 @@
 import cv2
 import time
+import os
 
 from core.esp32_camera import get_video_feed
-from core.controller import VIDEO_URL, ScreenResolution, set_flash, set_framesize
-from core.face import initialize_face_recognition, start_recognizing
+from core.controller import (
+    VIDEO_URL,
+    ScreenResolution,
+    open_and_close_door,
+    set_flash,
+    set_framesize,
+    find_and_change_esp32_ip,
+)
+from core.face import start_recognizing
 from core.face_detection import FaceDetection
 from core.face_liveness import LivenessDetection
-from core.webcam import get_webcam_feed, get_remote_webcam_feed
 from models.face import Face
-from utils.helpers import calculate_darkness_percentage, calculate_flash_intensity
+from utils.helpers import (
+    calculate_darkness_percentage,
+    calculate_flash_intensity,
+    should_open_door,
+)
 from utils.visualize_helpers import draw_faces
-from utils.constants import deepPix_checkpoint_path, img_folder, current_frame_path
+from utils.constants import (
+    deepPix_checkpoint_path,
+    img_folder,
+    current_frame_path,
+    FILE_PERMS,
+    should_process_video,
+)
 
 
 def process_video_feed(show_video: bool = False):
-    frame_skip = 2  # Process every 2nd frame instead of 3
+    frame_skip = 1  # Process every frame for smoother video
 
-    faceDetector = FaceDetection(max_num_faces=1)
+    faceDetector = FaceDetection(max_num_faces=3)
     livenessDetector = LivenessDetection(
         checkpoint_path=deepPix_checkpoint_path.as_posix()
     )
+    print("Finding esp32 camera...")
+    while not find_and_change_esp32_ip():
+        print("Could not find esp32 camera, retrying...")
+        time.sleep(5)
 
     if show_video:
         cv2.namedWindow("Video", cv2.WINDOW_NORMAL)
         cv2.resizeWindow("Video", 800, 600)
 
-    # set_framesize(ScreenResolution.SXGA_1280_1024)
+    set_framesize(ScreenResolution.SXGA_1280_1024)
+    set_flash(0)
 
     no_cam_img_path = "imgs/no-cam.png"
     no_cam_frame = cv2.imread(no_cam_img_path)
 
     detected_faces: dict[str, Face] = {}
     current_frame = 0
-    last_flash_change = -1
+    last_flash_change = time.time()
     last_flash_intensity = 0
+    # last_open_door = time.time()
 
     is_frame_available = True
     print("Starting video feed...")
-    while True:
+    while should_process_video.value:
         try:
-            # frame = get_video_feed(VIDEO_URL)
-            frame = get_remote_webcam_feed("http://192.168.0.60:9999")
-            if frame is None:  # Check if frame is None
+            try:
+                frame = get_video_feed(VIDEO_URL)
+            except Exception as e:
+                for _ in range(3):
+                    print("Error getting video feed, retrying...")
+                    if find_and_change_esp32_ip():
+                        print("Could not find esp32 camera, retrying...")
+                        time.sleep(5)
+
+                frame = None
+
+            if frame is None:
                 frame = no_cam_frame
                 is_frame_available = False
 
-            small_frame = cv2.resize(
-                frame, (0, 0), fx=0.5, fy=0.5
-            )  # Resize frame to 1/4th size to increase speed
+            if is_frame_available:
+                # Optimize frame resize
+                frame = cv2.resize(frame, (640, 360), interpolation=cv2.INTER_NEAREST)
 
+                # Draw faces on the frame
+                drawing_frame = frame.copy()
+                if len(detected_faces) > 0:
+                    drawing_frame = draw_faces(frame, list(detected_faces.values()))
+
+                # Higher quality JPEG compression for better visualization
+                encode_params = [
+                    int(cv2.IMWRITE_JPEG_QUALITY),
+                    85,  # Increased quality
+                    int(cv2.IMWRITE_JPEG_OPTIMIZE),
+                    1,
+                    int(cv2.IMWRITE_JPEG_PROGRESSIVE),
+                    1,
+                ]
+
+                success, buffer = cv2.imencode(".jpg", drawing_frame, encode_params)
+                if success:
+                    # Write directly to file instead of using temporary file
+                    try:
+                        with open(current_frame_path, "wb") as f:
+                            f.write(buffer.tobytes())
+                        os.chmod(current_frame_path, FILE_PERMS)
+                    except Exception as e:
+                        print(f"Frame write error: {e}")
+
+            # Reduced processing frequency
             if current_frame == 0 and is_frame_available:
-                if last_flash_change == -1 or time.time() - last_flash_change > 5:
+                if last_flash_change == -1 or time.time() - last_flash_change > 10:
                     if last_flash_intensity > 0:
-                        set_flash(
-                            0
-                        )  # Turn off flash so calculate darkness level is accurate
+                        set_flash(0)
 
                     darkness_level = calculate_darkness_percentage(frame)
                     flash_intensity = calculate_flash_intensity(
-                        darkness_level, threshold=70, max_flash_intensity=255
+                        darkness_level, threshold=80, max_flash_intensity=255
                     )
                     if flash_intensity > 0:
-                        set_flash(flash_intensity)
+                        # set_flash(flash_intensity) # FOR DEBUGGING
                         last_flash_change = time.time()
                         last_flash_intensity = flash_intensity
 
@@ -69,21 +125,25 @@ def process_video_feed(show_video: bool = False):
                         f"Darkness level: {darkness_level}, Flash intensity: {flash_intensity}"
                     )
 
-                frame_rgb = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
-                # face_locations = face_recognition.face_locations(frame_rgb, model="hog")
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 faces, boxes = faceDetector(frame_rgb)
 
                 matched_ids = []
-                for f, box in zip(faces, boxes):
-                    liveness_val = livenessDetector(face_arr=f)
+                ignore_ids = []
+                for fce, box in zip(faces, boxes):
+                    liveness_val = livenessDetector(face_arr=fce)
                     print(f"Face liveness: {liveness_val}")
                     face = Face(bbox=box, liveness=liveness_val)
+                    # frame width and height
+                    frame_width, frame_height = frame.shape[1], frame.shape[0]
+                    near = face.bbox.near_frame(frame_width, frame_height)
+                    face.near = near
                     face_path = str(img_folder / f"{face.id}.jpg")
-                    f = cv2.cvtColor(f, cv2.COLOR_RGB2BGR)
-                    cv2.imwrite(face_path, f)
+                    fce = cv2.cvtColor(fce, cv2.COLOR_RGB2BGR)
+                    cv2.imwrite(face_path, fce)
                     face.face_image_path = face_path
                     most_similar, max_match = face.most_similar(
-                        list(detected_faces.values())
+                        [f for f in detected_faces.values() if f.id not in ignore_ids]
                     )
 
                     face_matched = False
@@ -92,8 +152,8 @@ def process_video_feed(show_video: bool = False):
                             for b in detected_faces.values():
                                 if b.id == most_similar.id:
                                     face_matched = True
-
                                     matched_ids.append(b.id)
+                                    ignore_ids.append(b.id)
                                     b.live_update(face)
                                     break
 
@@ -102,14 +162,14 @@ def process_video_feed(show_video: bool = False):
                         detected_faces[face.id] = face
                         matched_ids.append(face.id)
 
-                # detected_faces = {
-                #     k: v for k, v in detected_faces.items() if k in matched_ids
-                # }
-
                 new_detected_faces = {}
                 for k, v in detected_faces.items():
                     if k in matched_ids:
                         new_detected_faces[k] = v
+
+                        # if face is unknown check it again
+                        if v.is_loaded and v.is_unknown:
+                            start_recognizing(frame=frame_rgb, face=v)
                     else:
                         v.active = False
                         v.live_update(v)
@@ -117,32 +177,27 @@ def process_video_feed(show_video: bool = False):
                 detected_faces = new_detected_faces
                 print(f"Found {len(faces)} faces", end="\r")
 
-            if is_frame_available:
-                current_frame = (current_frame + 1) % frame_skip
-                frame = draw_faces(
-                    frame, [f.scale_copy(2) for f in detected_faces.values()]
-                )
-                # Resize frame to a reasonable size before saving
-                frame = cv2.resize(frame, (1280, 720))
-                cv2.imwrite(
-                    str(current_frame_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 85]
-                )
+            current_frame = (current_frame + 1) % frame_skip
+
+            # if (
+            #     len(detected_faces) > 0 and time.time() - last_open_door > 20
+            # ):  # Open door every 30 seconds
+            #     for face in detected_faces.values():
+            #         if should_open_door(face):
+            #             last_open_door = time.time()
+            #             open_and_close_door()
+            # break
 
             if show_video:
                 cv2.imshow("Video", frame)
-
-                # Add shorter wait time and more frequent window updates
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord("q"):
+                if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
-            # Remove the sleep delay that was here
 
         except KeyboardInterrupt:
             break
 
         except Exception as e:
             print(f"Error in main loop: {e}")
-            # Reduce error wait time
             time.sleep(0.05)
 
     set_flash(0)
@@ -150,5 +205,4 @@ def process_video_feed(show_video: bool = False):
 
 
 if __name__ == "__main__":
-    initialize_face_recognition()
     process_video_feed(show_video=True)

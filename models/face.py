@@ -18,7 +18,7 @@ atexit.register(db.disconnect)
 class Face(BaseModel):
     bbox: Box
 
-    id: str = str(uuid4())
+    id: str
     name: str = "Unknown"
     created_at: datetime = datetime.now()
     liveness: float = 0.0
@@ -30,10 +30,13 @@ class Face(BaseModel):
     last_seen: datetime = datetime.now()
     last_data_update: datetime = datetime.now()
     is_loaded: bool = False
+    near: float = 0.0
 
     state: dict = {}
 
     def __init__(self, *args, **kwargs):
+        if "id" not in kwargs:
+            kwargs["id"] = str(uuid4())
         super().__init__(*args, **kwargs)
         if self.name == "Unknown":
             self.name = f"Unknown_{self.id.split('-')[0]}"
@@ -56,9 +59,18 @@ class Face(BaseModel):
             }
         )
 
+    def check_unknown(self):
+        if "Unknown" in self.name:
+            self.is_unknown = True
+        else:
+            self.is_unknown = False
+
+        return self.is_unknown
+
     def live_update(self, other: "Face", update_face: bool = False):
         self.bbox = other.bbox
         self.liveness = other.liveness
+        self.near = other.near
         self.active = other.active
         self.last_seen = datetime.now()
 

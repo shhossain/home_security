@@ -1,16 +1,3 @@
-// Copyright 2015-2016 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
 #include <Arduino.h>
 #include "esp_http_server.h"
 #include "esp_timer.h"
@@ -20,6 +7,7 @@
 #include "esp32-hal-ledc.h"
 #include "sdkconfig.h"
 #include "camera_index.h"
+#include <ESP32Servo.h>
 
 #if defined(ARDUINO_ARCH_ESP32) && defined(CONFIG_ARDUHAL_ESP_LOG)
 #include "esp32-hal-log.h"
@@ -35,6 +23,9 @@ unsigned long prevLedFlashMillis = 0;
 
 #define BUZZER_PIN 15
 #define LED_LEDC_GPIO 4
+#define SERVO_PIN 13
+
+Servo servo;
 
 typedef struct
 {
@@ -205,7 +196,6 @@ static esp_err_t capture_handler(httpd_req_t *req)
   log_i("JPG: %uB %ums", (uint32_t)(fb_len), (uint32_t)((fr_end - fr_start) / 1000));
   return res;
 }
-
 
 static esp_err_t stream_handler(httpd_req_t *req)
 {
@@ -769,43 +759,77 @@ static esp_err_t index_handler(httpd_req_t *req)
 
 static esp_err_t buzzer_handler(httpd_req_t *req)
 {
-    char *buf = NULL;
-    char _state[32];
-    char _duration[32];
+  char *buf = NULL;
+  char _state[32];
+  char _duration[32];
 
-    if (parse_get(req, &buf) != ESP_OK)
-    {
-        return ESP_FAIL;
-    }
-    if (httpd_query_key_value(buf, "state", _state, sizeof(_state)) != ESP_OK)
-    {
-        free(buf);
-        httpd_resp_send_404(req);
-        return ESP_FAIL;
-    }
-    if (httpd_query_key_value(buf, "duration", _duration, sizeof(_duration)) != ESP_OK)
-    {
-        free(buf);
-        httpd_resp_send_404(req);
-        return ESP_FAIL;
-    }
+  if (parse_get(req, &buf) != ESP_OK)
+  {
+    return ESP_FAIL;
+  }
+  if (httpd_query_key_value(buf, "state", _state, sizeof(_state)) != ESP_OK)
+  {
     free(buf);
+    httpd_resp_send_404(req);
+    return ESP_FAIL;
+  }
+  if (httpd_query_key_value(buf, "duration", _duration, sizeof(_duration)) != ESP_OK)
+  {
+    free(buf);
+    httpd_resp_send_404(req);
+    return ESP_FAIL;
+  }
+  free(buf);
 
-    int state = atoi(_state);
-    float duration = atof(_duration);
-    
-    if (state && duration > 0) {
-        digitalWrite(BUZZER_PIN, HIGH);
-        delay(duration * 1000);        // Convert duration to milliseconds
-        digitalWrite(BUZZER_PIN, LOW); // Turn off the buzzer after the delay
-    } else {
-        digitalWrite(BUZZER_PIN, state ? HIGH : LOW);
-    }
+  int state = atoi(_state);
+  float duration = atof(_duration);
 
-    Serial.printf("Buzzer state: %d, duration: %.1f seconds\n", state, duration);
+  if (state && duration > 0)
+  {
+    digitalWrite(BUZZER_PIN, HIGH);
+    delay(duration * 1000);        // Convert duration to milliseconds
+    digitalWrite(BUZZER_PIN, LOW); // Turn off the buzzer after the delay
+  }
+  else
+  {
+    digitalWrite(BUZZER_PIN, state ? HIGH : LOW);
+  }
 
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-    return httpd_resp_send(req, NULL, 0);
+  Serial.printf("Buzzer state: %d, duration: %.1f seconds\n", state, duration);
+
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, NULL, 0);
+}
+
+// servo handler
+static esp_err_t servo_handler(httpd_req_t *req)
+{
+  char *buf = NULL;
+  char _angle[32];
+
+  if (parse_get(req, &buf) != ESP_OK)
+  {
+    return ESP_FAIL;
+  }
+  if (httpd_query_key_value(buf, "angle", _angle, sizeof(_angle)) != ESP_OK)
+  {
+    free(buf);
+    httpd_resp_send_404(req);
+    return ESP_FAIL;
+  }
+  free(buf);
+
+  int angle = atoi(_angle);
+
+  if (angle >= 0 && angle <= 180)
+  {
+    servo.write(angle);
+  }
+
+  Serial.printf("Servo angle: %d\n", angle);
+
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, NULL, 0);
 }
 
 void startCameraServer()
@@ -817,6 +841,13 @@ void startCameraServer()
       .uri = "/buzzer",
       .method = HTTP_GET,
       .handler = buzzer_handler,
+      .user_ctx = NULL};
+
+  // servo
+  httpd_uri_t servo_uri = {
+      .uri = "/servo",
+      .method = HTTP_GET,
+      .handler = servo_handler,
       .user_ctx = NULL};
 
   httpd_uri_t index_uri = {
@@ -979,6 +1010,7 @@ void startCameraServer()
     httpd_register_uri_handler(camera_httpd, &pll_uri);
     httpd_register_uri_handler(camera_httpd, &win_uri);
     httpd_register_uri_handler(camera_httpd, &buzzer_uri);
+    httpd_register_uri_handler(camera_httpd, &servo_uri);
   }
 
   config.server_port += 1;
@@ -995,6 +1027,13 @@ void setupBuzzer()
   Serial.println("Setting up buzzer");
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW); // Start with buzzer off
+}
+
+void setupServo()
+{
+  Serial.println("Setting up servo");
+  servo.attach(SERVO_PIN);
+  servo.write(0);
 }
 
 void setupLedFlash()
