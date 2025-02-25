@@ -46,7 +46,7 @@ def get_video_feed(url):
         return None
 
     bytes_array = bytearray(b"")
-    for chunk in response.iter_content(chunk_size=8192):  # Increased chunk size
+    for chunk in response.iter_content(chunk_size=1024):  # Increased chunk size
         bytes_array.extend(chunk)
 
         # Find the beginning and end of JPEG

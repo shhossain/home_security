@@ -17,9 +17,8 @@
 
 bool isStreaming = false;
 
-int ledFlashIntensity = 0;
-int prevLedFlashIntensity = 0;
-unsigned long prevLedFlashMillis = 0;
+int currentFlashIntensity = 0;
+int currentServoAngle = 0;
 
 #define BUZZER_PIN 15
 #define LED_LEDC_GPIO 4
@@ -450,7 +449,19 @@ static esp_err_t cmd_handler(httpd_req_t *req)
   }
   else if (!strcmp(variable, "led_intensity"))
   {
+    currentFlashIntensity = val;
     ledcWrite(LED_LEDC_GPIO, val);
+  }
+  else if (!strcmp(variable, "servo_angle"))
+  {
+    if (val >= 0 && val <= 180)
+    {
+      currentServoAngle = val;
+      servo.write(val);
+    } else {
+      log_e("Invalid servo angle: %d", val);
+      res = -1;
+    }
   }
   else
   {
@@ -542,8 +553,8 @@ static esp_err_t status_handler(httpd_req_t *req)
   p += sprintf(p, "\"hmirror\":%u,", s->status.hmirror);
   p += sprintf(p, "\"dcw\":%u,", s->status.dcw);
   p += sprintf(p, "\"colorbar\":%u", s->status.colorbar);
-  p += sprintf(p, ",\"led_intensity\":%u", ledFlashIntensity);
-  p += sprintf(p, ",\"led_intensity\":%d", -1);
+  p += sprintf(p, ",\"led_intensity\":%u", currentFlashIntensity);
+  p += sprintf(p, ",\"servo_angle\":%u", currentServoAngle);
   *p++ = '}';
   *p++ = 0;
   httpd_resp_set_type(req, "application/json");
@@ -802,35 +813,35 @@ static esp_err_t buzzer_handler(httpd_req_t *req)
 }
 
 // servo handler
-static esp_err_t servo_handler(httpd_req_t *req)
-{
-  char *buf = NULL;
-  char _angle[32];
+// static esp_err_t servo_handler(httpd_req_t *req)
+// {
+//   char *buf = NULL;
+//   char _angle[32];
 
-  if (parse_get(req, &buf) != ESP_OK)
-  {
-    return ESP_FAIL;
-  }
-  if (httpd_query_key_value(buf, "angle", _angle, sizeof(_angle)) != ESP_OK)
-  {
-    free(buf);
-    httpd_resp_send_404(req);
-    return ESP_FAIL;
-  }
-  free(buf);
+//   if (parse_get(req, &buf) != ESP_OK)
+//   {
+//     return ESP_FAIL;
+//   }
+//   if (httpd_query_key_value(buf, "angle", _angle, sizeof(_angle)) != ESP_OK)
+//   {
+//     free(buf);
+//     httpd_resp_send_404(req);
+//     return ESP_FAIL;
+//   }
+//   free(buf);
 
-  int angle = atoi(_angle);
+//   int angle = atoi(_angle);
 
-  if (angle >= 0 && angle <= 180)
-  {
-    servo.write(angle);
-  }
+//   if (angle >= 0 && angle <= 180)
+//   {
+//     servo.write(angle);
+//   }
 
-  Serial.printf("Servo angle: %d\n", angle);
+//   Serial.printf("Servo angle: %d\n", angle);
 
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-  return httpd_resp_send(req, NULL, 0);
-}
+//   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+//   return httpd_resp_send(req, NULL, 0);
+// }
 
 void startCameraServer()
 {
@@ -844,11 +855,11 @@ void startCameraServer()
       .user_ctx = NULL};
 
   // servo
-  httpd_uri_t servo_uri = {
-      .uri = "/servo",
-      .method = HTTP_GET,
-      .handler = servo_handler,
-      .user_ctx = NULL};
+  // httpd_uri_t servo_uri = {
+  //     .uri = "/servo",
+  //     .method = HTTP_GET,
+  //     .handler = servo_handler,
+  //     .user_ctx = NULL};
 
   httpd_uri_t index_uri = {
       .uri = "/",
@@ -1010,7 +1021,7 @@ void startCameraServer()
     httpd_register_uri_handler(camera_httpd, &pll_uri);
     httpd_register_uri_handler(camera_httpd, &win_uri);
     httpd_register_uri_handler(camera_httpd, &buzzer_uri);
-    httpd_register_uri_handler(camera_httpd, &servo_uri);
+    // httpd_register_uri_handler(camera_httpd, &servo_uri);
   }
 
   config.server_port += 1;

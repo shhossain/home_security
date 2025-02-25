@@ -6,12 +6,12 @@ import threading
 from queue import Queue
 import numpy as np
 from core.controller import open_and_close_door
+from models.config import settings
 from models.face import Face, db
 from models.helpers import Box
-from utils.constants import em_path, img_folder
+from utils.constants import em_path, img_folder, should_run_thread
 import cv2
 from typing import Optional
-
 from utils.face_detection_helpers import extract_face
 from utils.helpers import should_open_door
 
@@ -69,7 +69,7 @@ def save_face(img_path: str, name: str, bbox: Optional[Box] = None):
 
 
 def load_faces():
-    while True:
+    while should_run_thread.value:
         total = db.face.count()
         if total == len(known_face_names) + len(unknown_face_names):
             time.sleep(1)
@@ -105,7 +105,7 @@ q = Queue()
 last_open_door = Value("d", 0)
 
 
-def _start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float = 0.85):
+def _start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float):
     box = face.bbox
     face_encodings = face_recognition.face_encodings(
         frame, [(box.top, box.right, box.bottom, box.left)]
@@ -122,7 +122,13 @@ def _start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float = 0.85
             if f:
                 face.update_from_db(f)
 
-                if should_open_door(face) and time.time() - last_open_door.value > 5:
+                if (
+                    should_open_door(
+                        face,
+                        settings.liveness_threshold,
+                    )
+                    and time.time() - last_open_door.value > settings.door_open_delay
+                ):
                     last_open_door.value = time.time()
                     open_and_close_door()
 
@@ -159,7 +165,7 @@ def _start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float = 0.85
 
 def recognize_faces():
     print("Starting face recognition")
-    while True:
+    while should_run_thread.value:
         kw = q.get()
         _start_recognizing(**kw)
         q.task_done()
@@ -168,12 +174,3 @@ def recognize_faces():
 
 def start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float = 0.7):
     q.put({"frame": frame, "face": face, "tolerance": tolerance})
-
-
-# def initialize_face_recognition():
-#     save_face(r"C:\Users\sifat\Downloads\sifat.jpg", "Sifat")
-#     threading.Thread(target=recognize_faces, daemon=True).start()
-#     threading.Thread(target=load_faces, daemon=True).start()
-
-
-# initialize_face_recognition()

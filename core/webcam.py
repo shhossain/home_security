@@ -14,7 +14,7 @@ current_frame: dict[str, np.ndarray] = {}
 lock = threading.Lock()
 
 
-def get_webcam_feed(index: str | int = 0):
+def get_webcam_feed(index: str | int = 0, repeat: bool = False):
     if index not in caps:
         caps[index] = cv2.VideoCapture(index)
         atexit.register(lambda: caps[index].release())
@@ -25,8 +25,13 @@ def get_webcam_feed(index: str | int = 0):
         return None
 
     ret, frame = cap.read()
+    if not ret and repeat:
+        cap.release()
+        cap.open(index)
+        ret, frame = cap.read()
+
     if not ret:
-        print(f"Error reading frame from webcam {index}")
+        print(f"Error getting frame from webcam {index}")
         return None
 
     return frame

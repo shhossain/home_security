@@ -8,7 +8,6 @@ from fastapi.responses import FileResponse, JSONResponse
 from prisma import Prisma
 from prisma.types import FaceWhereInput
 from pydantic import BaseModel
-from core.controller import change_esp32_ip
 from core.face import load_faces, recognize_faces, save_face
 from models.helpers import Box
 from utils.constants import current_frame_path, should_process_video
@@ -24,10 +23,13 @@ import async_timeout
 from PIL import Image, ImageDraw, ImageFont
 import base64
 import face_recognition
-from utils.constants import frame_lock_path
+from utils.constants import frame_lock_path, should_run_thread
 from utils.helpers import base64_to_image, image_to_base64
 from multiprocessing import Value
 import uvicorn
+from models.config import Config, settings
+from models.status import ESP32CameraStatus
+from core.controller import set_flash, set_servo_angle, open_and_close_door
 
 db = Prisma()
 is_video_feed_running = Value("b", False)
@@ -94,10 +96,11 @@ def _process_video_feed():
 
 @app.get("/camera")
 def get_camera(ip: str):
-    change_esp32_ip(ip)
     if is_video_feed_running.value:
         should_process_video.value = False
         is_video_feed_running.value = False
+
+    settings.set("esp32_ip", ip)
 
     # run the video feed 5 seconds later
     print("Camera IP changed to =>", ip)
@@ -337,5 +340,48 @@ async def video_websocket(websocket: WebSocket):
             await websocket.close()
 
 
+@app.get("/api/config")
+def get_config():
+    return settings.model_dump()
+
+
+@app.put("/api/config")
+async def update_config(updates: Config):
+    settings.update(updates)
+    return settings.model_dump()
+
+
+@app.get("/api/esp32/status")
+def get_esp32_status():
+    try:
+        status = ESP32CameraStatus(settings)
+        return status.model_dump()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/esp32/control")
+async def control_esp32(command: dict):
+    cmd_type = command.get("type")
+    value = command.get("value")
+
+    if cmd_type == "flash":
+        set_flash(value)
+    elif cmd_type == "servo":
+        set_servo_angle(value)
+    elif cmd_type == "door":
+        if value:
+            open_and_close_door()
+    else:
+        return {"error": "Invalid command type"}
+
+    return {"success": True}
+
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    except KeyboardInterrupt:
+        should_run_thread.value = False
+
+    # exit
