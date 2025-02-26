@@ -197,12 +197,12 @@ def process_video_feed():
                         new_detected_faces[k] = v
 
                         # if face is unknown check it again
-                        # if v.is_loaded and v.is_unknown:
-                        #     start_recognizing(
-                        #         frame=frame_rgb,
-                        #         face=v,
-                        #         tolerance=settings.face_detection_threshold,
-                        #     )
+                        if v.is_loaded and v.is_unknown:
+                            start_recognizing(
+                                frame=frame_rgb,
+                                face=v,
+                                tolerance=settings.face_detection_threshold,
+                            )
                     else:
                         v.active = False
                         v.live_update(v)
