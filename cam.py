@@ -132,22 +132,22 @@ def process_video_feed():
             # Reduced processing frequency
             if is_frame_available:
                 print("Processing frame...")
-                if last_flash_change == -1 or time.time() - last_flash_change > 10:
-                    if last_flash_intensity > 0:
-                        set_flash(0)
+                # if last_flash_change == -1 or time.time() - last_flash_change > 10:
+                #     if last_flash_intensity > 0:
+                #         set_flash(0)
 
-                    darkness_level = calculate_darkness_percentage(frame)
-                    flash_intensity = calculate_flash_intensity(
-                        darkness_level, threshold=80, max_flash_intensity=255
-                    )
-                    if flash_intensity > 0:
-                        set_flash(flash_intensity)
-                        last_flash_change = time.time()
-                        last_flash_intensity = flash_intensity
+                #     darkness_level = calculate_darkness_percentage(frame)
+                #     flash_intensity = calculate_flash_intensity(
+                #         darkness_level, threshold=80, max_flash_intensity=255
+                #     )
+                #     if flash_intensity > 0:
+                #         set_flash(flash_intensity)
+                #         last_flash_change = time.time()
+                #         last_flash_intensity = flash_intensity
 
-                    print(
-                        f"Darkness level: {darkness_level}, Flash intensity: {flash_intensity}"
-                    )
+                #     print(
+                #         f"Darkness level: {darkness_level}, Flash intensity: {flash_intensity}"
+                #     )
 
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 print("Detecting faces...")
