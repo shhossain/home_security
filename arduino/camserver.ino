@@ -5,8 +5,12 @@
 #define CAMERA_MODEL_AI_THINKER // Has PSRAM
 
 #define BUZZER_PIN 15
-#define LED_LEDC_GPIO 4
+#define CONNECT_LED_PIN 14
+#define SERVO_PIN 13
 #define WIFI_RESET_BUTTON_PIN 12
+
+#define LED_LEDC_GPIO 4
+
 #define NUM_THREADS 4
 
 #include "camera_pins.h"
@@ -32,6 +36,7 @@ void setup()
 
   Serial.begin(115200);
   pinMode(WIFI_RESET_BUTTON_PIN, INPUT);
+  pinMode(CONNECT_LED_PIN, OUTPUT);
 
   Serial.setDebugOutput(true);
   Serial.println();
@@ -112,7 +117,7 @@ void setup()
   // wm.addParameter(&custom_ip);
 
   // set timeouit
-  wm.
+  wm.setConnectTimeout(20);
 
   bool res = wm.autoConnect("Home Security Camera", "home@123");
   if (!res)
@@ -135,7 +140,6 @@ void setup()
   Serial.print("MAC Address: ");
   Serial.println(WiFi.macAddress());
 
-  
   startCameraServer();
   setupBuzzer();
   setupLedFlash();
@@ -144,13 +148,19 @@ void setup()
   Serial.print("Camera Ready! Use 'http://");
   Serial.print(WiFi.localIP());
   Serial.println("' to connect");
-
-  
 }
-
 
 void loop()
 {
+
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    digitalWrite(CONNECT_LED_PIN, HIGH);
+  }
+  else
+  {
+    digitalWrite(CONNECT_LED_PIN, LOW);
+  }
 
   if (digitalRead(WIFI_RESET_BUTTON_PIN) == HIGH)
   {
@@ -161,5 +171,5 @@ void loop()
     ESP.restart();
   }
 
-  delay(1000);
+  delay(100);
 }

@@ -1,3 +1,4 @@
+from multiprocessing import Value
 import threading
 from typing import Optional
 import requests
@@ -5,6 +6,7 @@ from enum import Enum
 import time
 import socket
 from models.config import settings
+from models.status import ESP32CameraStatus
 
 
 class ScreenResolution(Enum):
@@ -83,6 +85,7 @@ def find_and_change_esp32_ip():
     ip = find_esp32_ip()
     if ip:
         settings.set("esp32_ip", ip)
+        set_framesize(ScreenResolution.SXGA_1280_1024)
         print(f"[+] Found esp32 camera at {ip}")
         return ip
 
@@ -92,7 +95,8 @@ def find_and_change_esp32_ip():
 def buzzer(state, duration: float = 1):
     try:
         requests.get(
-            f"http://{settings.esp32_ip}/buzzer?state={1 if state else 0}&duration={duration}"
+            f"http://{settings.esp32_ip}/buzzer?state={1 if state else 0}&duration={duration}",
+            timeout=1,
         )
     except requests.RequestException as e:
         print(f"Error controlling buzzer: {e}")
@@ -102,22 +106,39 @@ def control_buzzer(state, duration: float = 1):
     threading.Thread(target=buzzer, args=(state, duration), daemon=True).start()
 
 
-def set_control(var, val, retries=3, blocking: bool = False):
+def set_control(var, val, blocking: bool = False):
     def _set_control(var, val):
-        for _ in range(retries):
-            try:
-                response = requests.get(
-                    f"http://{settings.esp32_ip}/control?var={var}&val={val}"
-                )
-                return response.ok
-            except requests.RequestException as e:
-                print(f"Error controlling flash: {e}")
-                time.sleep(0.1)
+        try:
+            response = requests.get(
+                f"http://{settings.esp32_ip}/control?var={var}&val={val}", timeout=1
+            )
+            return response.ok
+        except requests.RequestException as e:
+            print(f"Error controlling flash: {e}")
+            time.sleep(0.1)
 
     if blocking:
         return _set_control(var, val)
     else:
         threading.Thread(target=_set_control, args=(var, val), daemon=True).start()
+
+
+check_frunning = Value("b", False)
+
+
+def check_and_set_framesize():
+    if check_frunning.value:
+        return
+
+    try:
+        status = ESP32CameraStatus(settings)
+        if status.data.framesize != ScreenResolution.SXGA_1280_1024.value:
+            set_framesize(ScreenResolution.SXGA_1280_1024)
+            print("Framesize changed to SXGA_1280_1024")
+    except Exception as e:
+        print(f"Error checking framesize: {e}")
+    finally:
+        check_frunning.value = False
 
 
 def set_flash(intensity, **kw):
@@ -133,10 +154,12 @@ def set_servo_angle(angle, **kw):
 
 
 def open_door():
+    print("Opening door")
     set_servo_angle(90)  # Open door
 
 
 def close_door():
+    print("Closing door")
     set_servo_angle(0)  # Close door
 
 

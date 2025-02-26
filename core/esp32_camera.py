@@ -40,7 +40,7 @@ session.headers.update({"Connection": "keep-alive"})
 
 
 def get_video_feed(url):
-    response = session.get(url, stream=True)
+    response = session.get(url, stream=True, timeout=5)
     if not response.ok:
         print(f"Bad response: {response.status_code}")
         return None

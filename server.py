@@ -29,7 +29,12 @@ from multiprocessing import Value
 import uvicorn
 from models.config import Config, settings
 from models.status import ESP32CameraStatus
-from core.controller import set_flash, set_servo_angle, open_and_close_door
+from core.controller import (
+    close_door,
+    open_door,
+    set_flash,
+    set_servo_angle,
+)
 
 db = Prisma()
 is_video_feed_running = Value("b", False)
@@ -41,15 +46,15 @@ is_video_feed_running = Value("b", False)
 # threading.Thread(target=process_video_feed).start()
 
 
-def init():
-    threading.Thread(
-        target=save_face,
-        args=(r"C:\Users\sifat\Downloads\sifat.jpg", "Sifat"),
-        daemon=True,
-    ).start()
-    threading.Thread(target=process_video_feed).start()
-    threading.Thread(target=recognize_faces).start()
-    threading.Thread(target=load_faces).start()
+# def init():
+#     threading.Thread(
+#         target=save_face,
+#         args=(r"C:\Users\sifat\Downloads\sifat.jpg", "Sifat"),
+#         daemon=True,
+#     ).start()
+#     threading.Thread(target=process_video_feed).start()
+#     threading.Thread(target=recognize_faces).start()
+#     threading.Thread(target=load_faces).start()
 
 
 # app lifecycle
@@ -57,7 +62,7 @@ def init():
 async def lifespan(app: FastAPI):
     db.connect()
     print("Connected to database")
-    init()
+    # init()
     yield
     db.disconnect()
 
@@ -355,7 +360,7 @@ async def update_config(updates: Config):
 def get_esp32_status():
     try:
         status = ESP32CameraStatus(settings)
-        return status.model_dump()
+        return status.data.model_dump()
     except Exception as e:
         return {"error": str(e)}
 
@@ -371,7 +376,9 @@ async def control_esp32(command: dict):
         set_servo_angle(value)
     elif cmd_type == "door":
         if value:
-            open_and_close_door()
+            open_door()
+        else:
+            close_door()
     else:
         return {"error": "Invalid command type"}
 
@@ -379,9 +386,6 @@ async def control_esp32(command: dict):
 
 
 if __name__ == "__main__":
-    try:
-        uvicorn.run(app, host="0.0.0.0", port=8000)
-    except KeyboardInterrupt:
-        should_run_thread.value = False
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
     # exit

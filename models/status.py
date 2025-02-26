@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, TypedDict
 from pydantic import BaseModel
 import requests
 
@@ -34,7 +34,7 @@ from models.config import Config
 #   p += sprintf(p, ",\"servo_angle\":%u", currentServoAngle);
 
 
-class ESP32CameraStatus(BaseModel):
+class ESP32CameraStatusData(BaseModel):
     xclk: int
     pixformat: int
     framesize: int
@@ -64,10 +64,12 @@ class ESP32CameraStatus(BaseModel):
     led_intensity: int
     servo_angle: int
 
+
+class ESP32CameraStatus:
     def __init__(self, config: Config):
         self.config = config
-        self.data = self.load_status()
-        super().__init__(**self.data)
+        data = self.load_status()
+        self.data = ESP32CameraStatusData(**data)
 
     def load_status(self) -> Dict[str, int]:
         for _ in range(3):

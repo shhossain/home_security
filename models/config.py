@@ -2,6 +2,8 @@ from typing import Literal, TypedDict, overload
 import json
 from utils.constants import app_path
 from pydantic import BaseModel
+from prisma import Prisma
+import os
 
 config_path = app_path / "config.json"
 
@@ -14,8 +16,13 @@ ConfigKeys = Literal[
     "max_face_detection",
     "face_detection_threshold",
     "show_video",
-    "fps"
+    "fps",
 ]
+
+config_name = os.getenv("CONFIG_NAME", "esp32_config")
+
+db = Prisma()
+db.connect()
 
 
 class FaceDetectionConfig(TypedDict):
@@ -38,24 +45,41 @@ class Config(BaseModel):
         super().__init__(*args, **kwargs)
 
     def load_config(self):
-        if config_path.exists():
-            with open(config_path, "r") as f:
+        config = db.settings.find_unique(where={"name": config_name})
+        if config:
+            for _ in range(3):
                 try:
-                    stored_config = json.load(f)
-                    for key, value in stored_config.items():
-                        # setattr(self, key, value)
+                    val = json.loads(config.value)
+                    for key, value in val.items():
                         if hasattr(self, key):
                             setattr(self, key, value)
+                    break
                 except json.JSONDecodeError:
-                    pass
+                    print("Invalid JSON")
+                except Exception as e:
+                    print(f"Error loading config: {e}")
+        else:
+            self._save_config()
 
     def _save_config(self):
-        with open(config_path, "w") as f:
-            json.dump(self.model_dump(), f, indent=2)
+        for _ in range(3):
+            try:
+                db.settings.upsert(
+                    where={"name": config_name},
+                    data={
+                        "create": {
+                            "name": config_name,
+                            "value": json.dumps(self.model_dump()),
+                        },
+                        "update": {"value": json.dumps(self.model_dump())},
+                    },
+                )
+                break
+            except Exception as e:
+                print(f"Error saving config: {e}")
 
     def update(self, obj):
         updated = self.model_validate(obj)
-        print(updated)
         for key, value in updated.model_dump().items():
             setattr(self, key, value)
         self._save_config()
@@ -76,7 +100,7 @@ class Config(BaseModel):
             "door_open_for",
             "max_face_detection",
             "show_video",
-            "fps"
+            "fps",
         ],
         value: int,
     ): ...
@@ -99,7 +123,7 @@ class Config(BaseModel):
             "door_open_for",
             "max_face_detection",
             "show_video",
-            "fps"
+            "fps",
         ],
     ) -> int: ...
     def get(self, key: ConfigKeys):

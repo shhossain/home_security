@@ -1,16 +1,18 @@
 from pathlib import Path
+import threading
 import cv2
 import time
 import os
 from core.esp32_camera import get_video_feed
 from core.controller import (
     ScreenResolution,
+    check_and_set_framesize,
     get_video_url,
     set_flash,
     set_framesize,
     find_and_change_esp32_ip,
 )
-from core.face import start_recognizing
+from core.face import load_faces, recognize_faces, save_face, start_recognizing
 from core.face_detection import FaceDetection
 from core.face_liveness import LivenessDetection
 from core.webcam import get_remote_webcam_feed, get_webcam_feed
@@ -31,17 +33,18 @@ from utils.constants import (
 
 
 def get_frame(cam: str):
+    print(f"Getting frame from {cam}...", end="\r")
     if cam == "esp32":
         try:
+            print(f"Getting frame from {settings.esp32_ip}...", end="\r")
             return get_video_feed(get_video_url(settings.esp32_ip))
         except Exception as e:
-            if "Failed to establish a new connection" in str(e):
-                for _ in range(3):
-                    print("Error getting video feed, retrying...")
-                    if find_and_change_esp32_ip():
-                        return
-                    print("Could not find esp32 camera, retrying...")
-                    time.sleep(2)
+            for _ in range(3):
+                print("Error getting video feed, retrying...")
+                if find_and_change_esp32_ip():
+                    return
+                print("Could not find esp32 camera, retrying...")
+                time.sleep(2)
 
     elif (
         cam.isnumeric()
@@ -88,14 +91,18 @@ def process_video_feed():
     while should_run_thread.value:
         try:
             frame = get_frame(settings.cam_str)
+            print("Frame received...")
 
             if frame is None:
                 frame = no_cam_frame
                 is_frame_available = False
+            else:
+                is_frame_available = True
+                threading.Thread(target=check_and_set_framesize, daemon=True).start()
 
             if is_frame_available:
                 # Optimize frame resize
-                # frame = cv2.resize(frame, (640, 360), interpolation=cv2.INTER_NEAREST)
+                frame = cv2.resize(frame, (640, 360), interpolation=cv2.INTER_NEAREST)
 
                 # Draw faces on the frame
                 drawing_frame = frame.copy()
@@ -124,6 +131,7 @@ def process_video_feed():
 
             # Reduced processing frequency
             if is_frame_available:
+                print("Processing frame...")
                 if last_flash_change == -1 or time.time() - last_flash_change > 10:
                     if last_flash_intensity > 0:
                         set_flash(0)
@@ -142,13 +150,15 @@ def process_video_feed():
                     )
 
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                print("Detecting faces...")
                 faces, boxes = faceDetector(frame_rgb)
 
                 matched_ids = []
                 ignore_ids = []
                 for fce, box in zip(faces, boxes):
-                    # liveness_val = livenessDetector(face_arr=fce)
-                    liveness_val = 0
+                    # liveness_val = 0
+                    print("Detecting liveness...")
+                    liveness_val = livenessDetector(face_arr=fce)
                     print(f"Face liveness: {liveness_val}")
                     face = Face(bbox=box, liveness=liveness_val)
                     # frame width and height
@@ -175,22 +185,24 @@ def process_video_feed():
                                     break
 
                     if not face_matched:
+                        print("Starting recognizing...")
                         start_recognizing(frame=frame_rgb, face=face)
                         detected_faces[face.id] = face
                         matched_ids.append(face.id)
 
+                print("Filtering faces...")
                 new_detected_faces = {}
                 for k, v in detected_faces.items():
                     if k in matched_ids:
                         new_detected_faces[k] = v
 
                         # if face is unknown check it again
-                        if v.is_loaded and v.is_unknown:
-                            start_recognizing(
-                                frame=frame_rgb,
-                                face=v,
-                                tolerance=settings.face_detection_threshold,
-                            )
+                        # if v.is_loaded and v.is_unknown:
+                        #     start_recognizing(
+                        #         frame=frame_rgb,
+                        #         face=v,
+                        #         tolerance=settings.face_detection_threshold,
+                        #     )
                     else:
                         v.active = False
                         v.live_update(v)
@@ -210,6 +222,8 @@ def process_video_feed():
             if settings.fps:
                 time.sleep(1 / settings.fps)
 
+            time.sleep(0.001)
+
         except Exception as e:
             print(f"Error in main loop: {e}")
             time.sleep(0.05)
@@ -218,6 +232,18 @@ def process_video_feed():
     cv2.destroyAllWindows()
 
 
+def init():
+    threading.Thread(
+        target=save_face,
+        args=(r"C:\Users\sifat\Downloads\sifat.jpg", "Sifat"),
+        daemon=True,
+    ).start()
+    threading.Thread(target=process_video_feed).start()
+    threading.Thread(target=recognize_faces).start()
+    threading.Thread(target=load_faces).start()
+
+
 if __name__ == "__main__":
     settings.set("show_video", 1)
-    process_video_feed()
+
+    init()

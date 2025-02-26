@@ -46,8 +46,6 @@ for file_path in [current_frame_path, frame_lock_path]:
 
 
 # process video feed
-should_process_video = Value("b", False)
-should_process_video.value = True
+should_process_video = Value("b", True)
 
-should_run_thread = Value("b", False)
-should_run_thread.value = True
+should_run_thread = Value("b", True)

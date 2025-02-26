@@ -21,9 +21,15 @@ npm i
 npm run build
 ```
 
-## Run the server
+Go to the root directory of the project and run the following commands (you need three terminals open):
 
-Go to the root directory of the project and run the following command:
+## Run the Camera
+
+```bash
+python cam.py
+```
+
+## Run the server
 
 ```bash
 uvicorn server:app --host 0.0.0.0 --port 8000

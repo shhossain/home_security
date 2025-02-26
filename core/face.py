@@ -3,7 +3,7 @@ import pickle
 import time
 import face_recognition
 import threading
-from queue import Queue
+from queue import Queue, Empty
 import numpy as np
 from core.controller import open_and_close_door
 from models.config import settings
@@ -101,76 +101,125 @@ def load_faces():
 
 
 lock = threading.Lock()
-q = Queue()
+# Replace the Queue() initialization with a size limit
+q = Queue(maxsize=5)  # Increased queue size slightly
+recognition_timeout = 2.0  # seconds
 last_open_door = Value("d", 0)
 
 
 def _start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float):
-    box = face.bbox
-    face_encodings = face_recognition.face_encodings(
-        frame, [(box.top, box.right, box.bottom, box.left)]
-    )
-    if face_encodings:
-        matches = face_recognition.compare_faces(
-            known_face_encodings,
-            face_encodings[0],
-            tolerance=tolerance,
+    try:
+        # Add timeout for face encoding
+        start_time = time.time()
+        face_encodings = face_recognition.face_encodings(
+            frame, [(face.bbox.top, face.bbox.right, face.bbox.bottom, face.bbox.left)]
         )
+
+        if time.time() - start_time > recognition_timeout:
+            print("Face recognition timeout")
+            return
+
+        if not face_encodings:
+            return
+
+        # Process known faces
+        face_encoding = face_encodings[0]
+        matches = []
+
+        with lock:  # Use lock only for the comparison
+            matches = face_recognition.compare_faces(
+                known_face_encodings,
+                face_encoding,
+                tolerance=tolerance,
+            )
+
         if True in matches:
             name = known_face_names[matches.index(True)]
             f = db.face.find_unique(where={"name": name})
             if f:
+                print(f"Recognized face: {name}")
                 face.update_from_db(f)
+                face.is_unknown = False
 
                 if (
-                    should_open_door(
-                        face,
-                        settings.liveness_threshold,
-                    )
+                    should_open_door(face, settings.liveness_threshold)
                     and time.time() - last_open_door.value > settings.door_open_delay
                 ):
                     last_open_door.value = time.time()
-                    open_and_close_door()
-
+                    threading.Thread(target=open_and_close_door, daemon=True).start()
         else:
-            matches = face_recognition.compare_faces(
-                unknown_face_encodings,
-                face_encodings[0],
-                tolerance=tolerance,
-            )
-            if True in matches:
-                name = unknown_face_names[matches.index(True)]
-                f = db.face.find_unique(where={"name": name})
-                if f:
-                    face.is_unknown = False
-                    face.update_from_db(f)
+            # Process unknown faces similar to before but with timeout check
+            if time.time() - start_time > recognition_timeout:
+                return
 
-            else:
-                if face.liveness < 0.5:
-                    return
+            if face.liveness < 0.5:
+                return
 
-                epath = str(em_path / str(face.name + ".pkl"))
-                with open(epath, "wb") as f:
-                    pickle.dump(face_encodings[0], f)
+            epath = str(em_path / str(face.name + ".pkl"))
+            with open(epath, "wb") as f:
+                pickle.dump(face_encodings[0], f)
 
-                face.face_embeddings_path = epath
-                face.is_unknown = True
-                face.create()
+            face.face_embeddings_path = epath
+            face.is_unknown = True
+            face.create()
 
-                unknown_face_encodings.append(face_encodings[0])
-                unknown_face_names.append(face.name)
+            unknown_face_encodings.append(face_encodings[0])
+            unknown_face_names.append(face.name)
 
-    face.is_loaded = True
+    except Exception as e:
+        print(f"Recognition error: {e}")
+    finally:
+        face.is_loaded = True
+
+
+# def recognize_faces():
+#     print("Starting face recognition")
+#     while should_run_thread.value:
+#         try:
+#             kw = q.get(timeout=0.5)
+#             _start_recognizing(**kw)
+#             q.task_done()
+#         except Empty:
+#             # Queue is empty, just continue waiting
+#             time.sleep(0.1)  # Sleep a bit to prevent CPU thrashing
+#             continue
+#         except Exception as e:
+#             print(f"Error in recognition loop: {e}")
+#             time.sleep(0.1)  # Sleep on error to prevent rapid retries
+#             continue
+
+#         time.sleep(0.01)  # Small sleep to prevent CPU overload
+
+
+is_recognizing = Value("b", False)
 
 
 def recognize_faces():
-    print("Starting face recognition")
-    while should_run_thread.value:
-        kw = q.get()
-        _start_recognizing(**kw)
-        q.task_done()
-        time.sleep(0.1)
+    if is_recognizing.value:
+        return
+
+    while not q.empty():
+        is_recognizing.value = True
+        try:
+            kw = q.get(timeout=0.5)
+            _start_recognizing(**kw)
+            q.task_done()
+        except Empty:
+            # Queue is empty, just continue waiting
+            time.sleep(0.1)
+            continue
+
+    is_recognizing.value = False
 
 
 def start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float = 0.7):
-    q.put({"frame": frame, "face": face, "tolerance": tolerance})
+    print("Queueing recognition")
+    try:
+        # Use put_nowait to prevent blocking
+        if not q.full():
+            q.put_nowait({"frame": frame, "face": face, "tolerance": tolerance})
+            threading.Thread(target=recognize_faces).start()
+        else:
+            print("Recognition queue full, skipping face...")
+    except Exception as e:
+        print(f"Error queueing recognition: {e}")
