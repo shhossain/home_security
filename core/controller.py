@@ -110,7 +110,7 @@ def set_control(var, val, blocking: bool = False):
     def _set_control(var, val):
         try:
             response = requests.get(
-                f"http://{settings.esp32_ip}/control?var={var}&val={val}", timeout=1
+                f"http://{settings.esp32_ip}/control?var={var}&val={val}", timeout=5
             )
             return response.ok
         except requests.RequestException as e:
