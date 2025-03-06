@@ -29,6 +29,7 @@ void startCameraServer();
 void setupLedFlash();
 void setupBuzzer();
 void setupServo();
+int stableRead(int pin, int seconds);
 
 WiFiManager wm;
 void setup()
@@ -117,7 +118,7 @@ void setup()
   // wm.addParameter(&custom_ip);
 
   // set timeouit
-  wm.setConnectTimeout(20);
+  wm.setConnectTimeout(30);
 
   bool res = wm.autoConnect("Home Security Camera", "home@123");
   if (!res)
@@ -162,7 +163,7 @@ void loop()
     digitalWrite(CONNECT_LED_PIN, LOW);
   }
 
-  if (digitalRead(WIFI_RESET_BUTTON_PIN) == HIGH)
+  if (stableRead(WIFI_RESET_BUTTON_PIN, 3) == HIGH)
   {
     Serial.println("Resetting WiFi");
     WiFi.disconnect();
@@ -172,4 +173,33 @@ void loop()
   }
 
   delay(100);
+}
+
+int prevTime = millis();
+int hcount = 0;
+int lcount = 0;
+
+int stableRead(int pin, int seconds)
+{
+  int currentTime = millis();
+  int currentRead = digitalRead(pin);
+  if (currentRead == HIGH)
+  {
+    hcount++;
+  }
+  else
+  {
+    lcount++;
+  }
+
+  if ((currentTime - prevTime) > (seconds * 1000))
+  {
+    int val = (hcount > lcount) ? HIGH : LOW;
+    hcount = 0;
+    lcount = 0;
+    prevTime = currentTime;
+    return val;
+  }
+
+  return LOW;
 }

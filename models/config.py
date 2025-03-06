@@ -1,9 +1,11 @@
+import time
 from typing import Literal, TypedDict, overload
 import json
 from utils.constants import app_path
 from pydantic import BaseModel
 from prisma import Prisma
 import os
+import threading
 
 config_path = app_path / "config.json"
 
@@ -43,6 +45,13 @@ class Config(BaseModel):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # run load_config in every 5 seconds
+        threading.Thread(target=self._load_config_thread, daemon=True).start()
+
+    def _load_config_thread(self):
+        while True:
+            self.load_config()
+            time.sleep(5)
 
     def load_config(self):
         config = db.settings.find_unique(where={"name": config_name})

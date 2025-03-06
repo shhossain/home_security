@@ -169,13 +169,20 @@ def process_video_feed():
                     fce = cv2.cvtColor(fce, cv2.COLOR_RGB2BGR)
                     cv2.imwrite(face_path, fce)
                     face.face_image_path = face_path
+
+                    # Use a lower threshold for matching faces (0.6 instead of 0.8)
+                    # This makes it less likely to consider different faces as the same person
                     most_similar, max_match = face.most_similar(
                         [f for f in detected_faces.values() if f.id not in ignore_ids]
                     )
 
                     face_matched = False
                     if most_similar is not None:
-                        if max_match > 0.8:
+                        # Lower threshold from 0.8 to 0.6 for more strictness
+                        if max_match > 0.6:
+                            print(
+                                f"Match score: {max_match:.2f} with {most_similar.name}"
+                            )
                             for b in detected_faces.values():
                                 if b.id == most_similar.id:
                                     face_matched = True
@@ -186,7 +193,11 @@ def process_video_feed():
 
                     if not face_matched:
                         print("Starting recognizing...")
-                        start_recognizing(frame=frame_rgb, face=face)
+                        start_recognizing(
+                            frame=frame_rgb,
+                            face=face,
+                            tolerance=settings.face_detection_threshold,
+                        )
                         detected_faces[face.id] = face
                         matched_ids.append(face.id)
 

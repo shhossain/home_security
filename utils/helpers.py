@@ -103,3 +103,12 @@ def should_open_door(face: Face, liveness_threshold: float = 0.8) -> bool:
         return False
 
     return face.liveness >= liveness_threshold
+
+
+def is_less_than_eq(a: float, b: float) -> bool:
+    """
+    Reference is b
+    """
+    bv = len(str(b).split(".")[-1])
+    a = round(a, bv)
+    return a <= b

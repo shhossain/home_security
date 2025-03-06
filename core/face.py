@@ -13,7 +13,7 @@ from utils.constants import em_path, img_folder, should_run_thread
 import cv2
 from typing import Optional
 from utils.face_detection_helpers import extract_face
-from utils.helpers import should_open_door
+from utils.helpers import is_less_than_eq, should_open_door
 
 
 known_face_encodings = []
@@ -108,6 +108,10 @@ last_open_door = Value("d", 0)
 
 
 def _start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float):
+    if len(known_face_encodings) == 0:
+        print("No known faces to compare with")
+        return
+
     try:
         # Add timeout for face encoding
         start_time = time.time()
@@ -126,69 +130,77 @@ def _start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float):
         face_encoding = face_encodings[0]
         matches = []
 
+        # # First check if we have any known faces to compare with
+        # if len(known_face_encodings) == 0:
+        #     print("No known faces to compare with")
+        #     # Just create a new unknown face
+        #     epath = str(em_path / str(face.name + ".pkl"))
+        #     with open(epath, "wb") as f:
+        #         pickle.dump(face_encoding, f)
+
+        #     face.face_embeddings_path = epath
+        #     face.is_unknown = True
+        #     face.create()
+
+        #     unknown_face_encodings.append(face_encoding)
+        #     unknown_face_names.append(face.name)
+        #     return
+
         with lock:  # Use lock only for the comparison
-            matches = face_recognition.compare_faces(
-                known_face_encodings,
-                face_encoding,
-                tolerance=tolerance,
+            # Instead of just comparing faces, calculate the face distances
+            face_distances = face_recognition.face_distance(
+                known_face_encodings, face_encoding
             )
+            # Get the best match (smallest distance)
+            best_match_index = np.argmin(face_distances)
+            best_match_distance = face_distances[best_match_index]
 
-        if True in matches:
-            name = known_face_names[matches.index(True)]
-            f = db.face.find_unique(where={"name": name})
-            if f:
-                print(f"Recognized face: {name}")
-                face.update_from_db(f)
-                face.is_unknown = False
+            # Debug information about match
+            print(f"Best match distance: {best_match_distance:.3f} <= {tolerance}")
 
-                if (
-                    should_open_door(face, settings.liveness_threshold)
-                    and time.time() - last_open_door.value > settings.door_open_delay
-                ):
-                    last_open_door.value = time.time()
-                    threading.Thread(target=open_and_close_door, daemon=True).start()
-        else:
-            # Process unknown faces similar to before but with timeout check
-            if time.time() - start_time > recognition_timeout:
-                return
+            if is_less_than_eq(best_match_distance, tolerance):
+                name = known_face_names[best_match_index]
+                print(
+                    f"Recognized face: {name} with confidence: {1-best_match_distance:.2f}"
+                )
+                f = db.face.find_unique(where={"name": name})
+                if f:
+                    face.update_from_db(f)
+                    face.is_unknown = False
 
-            if face.liveness < 0.5:
-                return
+                    if (
+                        should_open_door(face, settings.liveness_threshold)
+                        and time.time() - last_open_door.value
+                        > settings.door_open_delay
+                    ):
+                        print("Opening door...")
+                        last_open_door.value = time.time()
+                        threading.Thread(
+                            target=open_and_close_door, daemon=True
+                        ).start()
+            # else:
+            #     # No good match found, create a new unknown face
+            #     print(f"No good match found (best distance: {best_match_distance:.3f})")
 
-            epath = str(em_path / str(face.name + ".pkl"))
-            with open(epath, "wb") as f:
-                pickle.dump(face_encodings[0], f)
+            #     if face.liveness < 0.5:
+            #         print("Low liveness score, skipping face registration")
+            #         return
 
-            face.face_embeddings_path = epath
-            face.is_unknown = True
-            face.create()
+            #     epath = str(em_path / str(face.name + ".pkl"))
+            #     with open(epath, "wb") as f:
+            #         pickle.dump(face_encoding, f)
 
-            unknown_face_encodings.append(face_encodings[0])
-            unknown_face_names.append(face.name)
+            #     face.face_embeddings_path = epath
+            #     face.is_unknown = True
+            #     face.create()
+
+            #     unknown_face_encodings.append(face_encoding)
+            #     unknown_face_names.append(face.name)
 
     except Exception as e:
         print(f"Recognition error: {e}")
     finally:
         face.is_loaded = True
-
-
-# def recognize_faces():
-#     print("Starting face recognition")
-#     while should_run_thread.value:
-#         try:
-#             kw = q.get(timeout=0.5)
-#             _start_recognizing(**kw)
-#             q.task_done()
-#         except Empty:
-#             # Queue is empty, just continue waiting
-#             time.sleep(0.1)  # Sleep a bit to prevent CPU thrashing
-#             continue
-#         except Exception as e:
-#             print(f"Error in recognition loop: {e}")
-#             time.sleep(0.1)  # Sleep on error to prevent rapid retries
-#             continue
-
-#         time.sleep(0.01)  # Small sleep to prevent CPU overload
 
 
 is_recognizing = Value("b", False)
@@ -212,7 +224,8 @@ def recognize_faces():
     is_recognizing.value = False
 
 
-def start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float = 0.7):
+def start_recognizing(*, frame: np.ndarray, face: Face, tolerance: float = 0.5):
+    # Changed default tolerance from 0.7 to 0.5 (stricter matching)
     print("Queueing recognition")
     try:
         # Use put_nowait to prevent blocking
